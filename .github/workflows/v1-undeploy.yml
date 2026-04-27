@@ -1,13 +1,24 @@
 name: Undeploy Release from Instance (v1)
 
-# Reusable workflow — Schema v1 undeploy implementation.
-# Called by .github/workflows/undeploy.yml.
+# Schema v1 undeploy workflow.
+# Supports manual dispatch (workflow_dispatch) and API-driven dispatch
+# (repository_dispatch). Undeploy is a v1-specific concept; other schema
+# versions may have different workflows (e.g. command-based dispatch).
 #
-# All sensitive values MUST be stored as GitHub Secrets and are never
-# committed to the repository.
+# repository_dispatch payload example:
+#   {
+#     "event_type": "undeploy-from-instance",
+#     "client_payload": {
+#       "instance":        "my-k8s-instance",
+#       "release_version": "1.2.3"
+#     }
+#   }
+#
+# All sensitive values (kubeconfig, SSH keys, cloud credentials, etc.) MUST be
+# stored as GitHub Secrets and are never committed to the repository.
 
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
       instance:
         description: "Target instance name (must match a folder under instances/)"
@@ -17,20 +28,11 @@ on:
         description: "Release version to undeploy (e.g. 1.2.3)"
         required: true
         type: string
-    secrets:
-      KUBECONFIG_DATA:
-        required: false
-      SERVER_HOST:
-        required: false
-      SERVER_USER:
-        required: false
-      SERVER_SSH_KEY:
-        required: false
-      CLOUD_ACCESS_KEY:
-        required: false
-      CLOUD_SECRET_KEY:
-        required: false
 
+  repository_dispatch:
+    types: [undeploy-from-instance]
+
+# Restrict the GITHUB_TOKEN to the minimum required permissions.
 permissions:
   contents: read
 
@@ -39,6 +41,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # -----------------------------------------------------------------------
+      # Normalise inputs — works for both trigger types
+      # -----------------------------------------------------------------------
+      - name: Resolve event inputs
+        id: inputs
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "instance=${{ github.event.client_payload.instance }}"               >> "$GITHUB_OUTPUT"
+            echo "release_version=${{ github.event.client_payload.release_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "instance=${{ inputs.instance }}"               >> "$GITHUB_OUTPUT"
+            echo "release_version=${{ inputs.release_version }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -47,7 +63,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Validate instance
         run: |
-          INSTANCE="${{ inputs.instance }}"
+          INSTANCE="${{ steps.inputs.outputs.instance }}"
 
           if [ -z "$INSTANCE" ]; then
             echo "Error: instance input is required"
@@ -77,7 +93,7 @@ jobs:
       - name: Read schema version
         id: schema
         run: |
-          INSTANCE="${{ inputs.instance }}"
+          INSTANCE="${{ steps.inputs.outputs.instance }}"
           VERSION=$(grep 'schema_version:' "instances/$INSTANCE/instance.yml" \
             | awk '{print $2}' | tr -d '"' | tr -d "'")
           echo "Schema version: $VERSION"
@@ -89,12 +105,12 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Execute undeploy script
         run: |
-          INSTANCE="${{ inputs.instance }}"
+          INSTANCE="${{ steps.inputs.outputs.instance }}"
           chmod +x "instances/$INSTANCE/scripts/undeploy.sh"
           bash "instances/$INSTANCE/scripts/undeploy.sh"
         env:
-          INSTANCE: ${{ inputs.instance }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          INSTANCE: ${{ steps.inputs.outputs.instance }}
+          RELEASE_VERSION: ${{ steps.inputs.outputs.release_version }}
           SCHEMA_VERSION: ${{ steps.schema.outputs.version }}
           # --- Secrets (configured in GitHub repository / environment settings) ---
           KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}

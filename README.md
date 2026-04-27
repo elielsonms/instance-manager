@@ -30,13 +30,8 @@ External Project
 ┌──────────────────────────────────────────────────────────────┐
 │                instance-manager (this repo)                  │
 │                                                              │
-│  .github/workflows/release.yml   ← version-agnostic trigger │
-│  .github/workflows/undeploy.yml  ← version-agnostic trigger │
-│           │                                                  │
-│           │  calls (workflow_call)                           │
-│           ▼                                                  │
-│  .github/workflows/v1/release.yml   ← schema v1 logic       │
-│  .github/workflows/v1/undeploy.yml  ← schema v1 logic       │
+│  .github/workflows/v1-release.yml   ← schema v1 trigger     │
+│  .github/workflows/v1-undeploy.yml  ← schema v1 trigger     │
 │           │                                                  │
 │           │  reads schema_version from                       │
 │           │  instances/<name>/instance.yml                   │
@@ -57,7 +52,7 @@ External Project
 2. **Schema-driven contracts** — each schema version defines the scripts an
    instance must implement and which environment variables they receive.
 3. **Instance encapsulation** — all instance-specific logic lives inside
-   `instances/<name>/`; the workflows are generic and schema-agnostic.
+   `instances/<name>/`; the workflows are versioned and schema-specific.
 4. **Legacy support** — an instance may keep older schema implementations
    alongside the current one for backward compatibility.
 
@@ -69,11 +64,8 @@ External Project
 instance-manager/
 ├── .github/
 │   └── workflows/
-│       ├── release.yml          # Version-agnostic trigger → calls v1/release.yml
-│       ├── undeploy.yml         # Version-agnostic trigger → calls v1/undeploy.yml
-│       └── v1/                  # Schema v1 workflow implementations (reusable)
-│           ├── release.yml      # v1 deploy logic (workflow_call)
-│           └── undeploy.yml     # v1 undeploy logic (workflow_call)
+│       ├── v1-release.yml       # Schema v1 release workflow (workflow_dispatch / repository_dispatch)
+│       └── v1-undeploy.yml      # Schema v1 undeploy workflow (workflow_dispatch / repository_dispatch)
 │
 ├── schemas/
 │   └── v1/
@@ -160,18 +152,21 @@ Workflows follow the same versioning as schemas:
 
 ```
 .github/workflows/
-├── release.yml          # Version-agnostic entry point (workflow_dispatch / repository_dispatch)
-├── undeploy.yml         # Version-agnostic entry point (workflow_dispatch / repository_dispatch)
-└── v1/                  # Schema v1 implementations — reusable workflows (workflow_call only)
-    ├── release.yml
-    └── undeploy.yml
+├── v1-release.yml   # Schema v1 release (workflow_dispatch / repository_dispatch)
+└── v1-undeploy.yml  # Schema v1 undeploy (workflow_dispatch / repository_dispatch)
 ```
 
-The **root workflows** are version-agnostic: they only receive external triggers and
-pass inputs + secrets down to the versioned reusable workflow for the matching schema.
-New schema versions get their own subfolder (e.g. `v2/`) without touching the root files.
+Each workflow file is named `<schema>-<action>.yml`, so its schema version is
+immediately visible. When schema v2 arrives, add `v2-*.yml` files without
+touching existing ones.
 
-### `release.yml` — Release into Instance
+> **Note:** GitHub Actions only fires event-based triggers (`workflow_dispatch`,
+> `repository_dispatch`, etc.) from files directly in `.github/workflows/`.
+> Subdirectories are only supported for `workflow_call` (reusable workflows).
+> The `v1-` prefix approach keeps all trigger files at the root while making
+> the schema ownership explicit in the file name.
+
+### `v1-release.yml` — Release into Instance (v1)
 
 Deploys a versioned release to a target instance.
 
@@ -189,14 +184,13 @@ Deploys a versioned release to a target instance.
 
 **Execution path:**
 1. Resolve inputs from the event type
-2. Call `.github/workflows/v1/release.yml` (schema v1 logic)
-3. Validate instance folder and `deploy.sh`
-4. Read `schema_version` from `instance.yml`
-5. Execute `instances/<name>/scripts/deploy.sh` with secrets injected as env vars
+2. Validate instance folder and `deploy.sh`
+3. Read `schema_version` from `instance.yml`
+4. Execute `instances/<name>/scripts/deploy.sh` with secrets injected as env vars
 
 ---
 
-### `undeploy.yml` — Undeploy Release from Instance
+### `v1-undeploy.yml` — Undeploy Release from Instance (v1)
 
 Removes a versioned release from a target instance.
 
@@ -213,10 +207,9 @@ Removes a versioned release from a target instance.
 
 **Execution path:**
 1. Resolve inputs from the event type
-2. Call `.github/workflows/v1/undeploy.yml` (schema v1 logic)
-3. Validate instance folder and `undeploy.sh`
-4. Read `schema_version` from `instance.yml`
-5. Execute `instances/<name>/scripts/undeploy.sh` with secrets injected as env vars
+2. Validate instance folder and `undeploy.sh`
+3. Read `schema_version` from `instance.yml`
+4. Execute `instances/<name>/scripts/undeploy.sh` with secrets injected as env vars
 
 ---
 
