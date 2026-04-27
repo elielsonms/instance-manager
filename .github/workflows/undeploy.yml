@@ -1,7 +1,8 @@
 name: Undeploy Release from Instance
 
-# Triggered by external projects via repository_dispatch or manually via
-# workflow_dispatch.
+# Version-agnostic entry point.
+# Accepts triggers from external projects and delegates to the workflow
+# that matches the schema version of the target instance.
 #
 # repository_dispatch payload example:
 #   {
@@ -31,22 +32,19 @@ on:
     types: [undeploy-from-instance]
 
 # Restrict the GITHUB_TOKEN to the minimum required permissions.
-# No write permissions are needed — this workflow only reads the repository
-# and executes instance scripts that connect to external targets via secrets.
 permissions:
   contents: read
 
 jobs:
-  undeploy:
+  # ---------------------------------------------------------------------------
+  # Resolve inputs from either trigger type before calling versioned workflows
+  # ---------------------------------------------------------------------------
+  resolve-inputs:
     runs-on: ubuntu-latest
-
+    outputs:
+      instance:        ${{ steps.inputs.outputs.instance }}
+      release_version: ${{ steps.inputs.outputs.release_version }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # -----------------------------------------------------------------------
-      # Normalise inputs regardless of the trigger type
-      # -----------------------------------------------------------------------
       - name: Resolve event inputs
         id: inputs
         run: |
@@ -58,64 +56,19 @@ jobs:
             echo "release_version=${{ inputs.release_version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      # -----------------------------------------------------------------------
-      # Validate that the instance folder and required files exist
-      # -----------------------------------------------------------------------
-      - name: Validate instance
-        run: |
-          INSTANCE="${{ steps.inputs.outputs.instance }}"
-
-          if [ -z "$INSTANCE" ]; then
-            echo "Error: instance input is required"
-            exit 1
-          fi
-
-          if [ ! -d "instances/$INSTANCE" ]; then
-            echo "Error: instance '$INSTANCE' not found under instances/"
-            exit 1
-          fi
-
-          if [ ! -f "instances/$INSTANCE/instance.yml" ]; then
-            echo "Error: instances/$INSTANCE/instance.yml is missing"
-            exit 1
-          fi
-
-          if [ ! -f "instances/$INSTANCE/scripts/undeploy.sh" ]; then
-            echo "Error: instances/$INSTANCE/scripts/undeploy.sh is missing"
-            exit 1
-          fi
-
-          echo "Instance '$INSTANCE' validated successfully"
-
-      # -----------------------------------------------------------------------
-      # Read the schema version declared by the instance
-      # -----------------------------------------------------------------------
-      - name: Read schema version
-        id: schema
-        run: |
-          INSTANCE="${{ steps.inputs.outputs.instance }}"
-          VERSION=$(grep 'schema_version:' "instances/$INSTANCE/instance.yml" \
-            | awk '{print $2}' | tr -d '"' | tr -d "'")
-          echo "Schema version: $VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      # -----------------------------------------------------------------------
-      # Execute the instance's undeploy script.
-      # Secrets are injected as environment variables — never hard-coded.
-      # -----------------------------------------------------------------------
-      - name: Execute undeploy script
-        run: |
-          INSTANCE="${{ steps.inputs.outputs.instance }}"
-          chmod +x "instances/$INSTANCE/scripts/undeploy.sh"
-          bash "instances/$INSTANCE/scripts/undeploy.sh"
-        env:
-          INSTANCE: ${{ steps.inputs.outputs.instance }}
-          RELEASE_VERSION: ${{ steps.inputs.outputs.release_version }}
-          SCHEMA_VERSION: ${{ steps.schema.outputs.version }}
-          # --- Secrets (configured in GitHub repository / environment settings) ---
-          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          SERVER_USER: ${{ secrets.SERVER_USER }}
-          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          CLOUD_ACCESS_KEY: ${{ secrets.CLOUD_ACCESS_KEY }}
-          CLOUD_SECRET_KEY: ${{ secrets.CLOUD_SECRET_KEY }}
+  # ---------------------------------------------------------------------------
+  # Schema v1 — delegate to .github/workflows/v1/undeploy.yml
+  # ---------------------------------------------------------------------------
+  undeploy-v1:
+    needs: resolve-inputs
+    uses: ./.github/workflows/v1/undeploy.yml
+    with:
+      instance:        ${{ needs.resolve-inputs.outputs.instance }}
+      release_version: ${{ needs.resolve-inputs.outputs.release_version }}
+    secrets:
+      KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
+      SERVER_HOST:     ${{ secrets.SERVER_HOST }}
+      SERVER_USER:     ${{ secrets.SERVER_USER }}
+      SERVER_SSH_KEY:  ${{ secrets.SERVER_SSH_KEY }}
+      CLOUD_ACCESS_KEY: ${{ secrets.CLOUD_ACCESS_KEY }}
+      CLOUD_SECRET_KEY: ${{ secrets.CLOUD_SECRET_KEY }}

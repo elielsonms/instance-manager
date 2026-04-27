@@ -27,22 +27,27 @@ External Project
       │
       │  repository_dispatch  (or workflow_dispatch)
       ▼
-┌─────────────────────────────────────────────────────┐
-│             instance-manager (this repo)            │
-│                                                     │
-│  .github/workflows/release.yml                      │
-│  .github/workflows/undeploy.yml                     │
-│           │                                         │
-│           │  reads schema_version from              │
-│           │  instances/<name>/instance.yml          │
-│           │                                         │
-│           ▼                                         │
-│  instances/<name>/scripts/deploy.sh  (or undeploy)  │
-│           │                                         │
-│           │  uses GitHub Secrets for credentials    │
-│           ▼                                         │
-│       Remote Target (K8s cluster / server / cloud)  │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                instance-manager (this repo)                  │
+│                                                              │
+│  .github/workflows/release.yml   ← version-agnostic trigger │
+│  .github/workflows/undeploy.yml  ← version-agnostic trigger │
+│           │                                                  │
+│           │  calls (workflow_call)                           │
+│           ▼                                                  │
+│  .github/workflows/v1/release.yml   ← schema v1 logic       │
+│  .github/workflows/v1/undeploy.yml  ← schema v1 logic       │
+│           │                                                  │
+│           │  reads schema_version from                       │
+│           │  instances/<name>/instance.yml                   │
+│           │                                                  │
+│           ▼                                                  │
+│  instances/<name>/scripts/deploy.sh  (or undeploy)           │
+│           │                                                  │
+│           │  uses GitHub Secrets for credentials             │
+│           ▼                                                  │
+│       Remote Target (K8s cluster / server / cloud)           │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 **Key principles:**
@@ -64,8 +69,11 @@ External Project
 instance-manager/
 ├── .github/
 │   └── workflows/
-│       ├── release.yml          # "Release into Instance" pipeline
-│       └── undeploy.yml         # "Undeploy Release from Instance" pipeline
+│       ├── release.yml          # Version-agnostic trigger → calls v1/release.yml
+│       ├── undeploy.yml         # Version-agnostic trigger → calls v1/undeploy.yml
+│       └── v1/                  # Schema v1 workflow implementations (reusable)
+│           ├── release.yml      # v1 deploy logic (workflow_call)
+│           └── undeploy.yml     # v1 undeploy logic (workflow_call)
 │
 ├── schemas/
 │   └── v1/
@@ -148,6 +156,21 @@ instances/<name>/
 
 ## GitHub Actions Workflows
 
+Workflows follow the same versioning as schemas:
+
+```
+.github/workflows/
+├── release.yml          # Version-agnostic entry point (workflow_dispatch / repository_dispatch)
+├── undeploy.yml         # Version-agnostic entry point (workflow_dispatch / repository_dispatch)
+└── v1/                  # Schema v1 implementations — reusable workflows (workflow_call only)
+    ├── release.yml
+    └── undeploy.yml
+```
+
+The **root workflows** are version-agnostic: they only receive external triggers and
+pass inputs + secrets down to the versioned reusable workflow for the matching schema.
+New schema versions get their own subfolder (e.g. `v2/`) without touching the root files.
+
 ### `release.yml` — Release into Instance
 
 Deploys a versioned release to a target instance.
@@ -164,11 +187,12 @@ Deploys a versioned release to a target instance.
 | `release_version` | ✅ | Semantic version (e.g. `1.2.3`) |
 | `image` | ⬜ | Container image with tag (e.g. `myapp:1.2.3`) |
 
-**Steps:**
+**Execution path:**
 1. Resolve inputs from the event type
-2. Validate that the instance folder and `deploy.sh` exist
-3. Read `schema_version` from `instance.yml`
-4. Execute `instances/<name>/scripts/deploy.sh` with secrets injected as env vars
+2. Call `.github/workflows/v1/release.yml` (schema v1 logic)
+3. Validate instance folder and `deploy.sh`
+4. Read `schema_version` from `instance.yml`
+5. Execute `instances/<name>/scripts/deploy.sh` with secrets injected as env vars
 
 ---
 
@@ -186,6 +210,13 @@ Removes a versioned release from a target instance.
 |---|---|---|
 | `instance` | ✅ | Instance folder name under `instances/` |
 | `release_version` | ✅ | Semantic version to remove (e.g. `1.2.3`) |
+
+**Execution path:**
+1. Resolve inputs from the event type
+2. Call `.github/workflows/v1/undeploy.yml` (schema v1 logic)
+3. Validate instance folder and `undeploy.sh`
+4. Read `schema_version` from `instance.yml`
+5. Execute `instances/<name>/scripts/undeploy.sh` with secrets injected as env vars
 
 ---
 

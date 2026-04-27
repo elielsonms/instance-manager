@@ -1,0 +1,110 @@
+name: Release into Instance (v1)
+
+# Reusable workflow — Schema v1 deploy implementation.
+# Called by .github/workflows/release.yml.
+#
+# All sensitive values MUST be stored as GitHub Secrets and are never
+# committed to the repository.
+
+on:
+  workflow_call:
+    inputs:
+      instance:
+        description: "Target instance name (must match a folder under instances/)"
+        required: true
+        type: string
+      release_version:
+        description: "Release version to deploy (e.g. 1.2.3)"
+        required: true
+        type: string
+      image:
+        description: "Container image with tag (e.g. myapp:1.2.3)"
+        required: false
+        type: string
+    secrets:
+      KUBECONFIG_DATA:
+        required: false
+      SERVER_HOST:
+        required: false
+      SERVER_USER:
+        required: false
+      SERVER_SSH_KEY:
+        required: false
+      CLOUD_ACCESS_KEY:
+        required: false
+      CLOUD_SECRET_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Validate that the instance folder and required files exist
+      # -----------------------------------------------------------------------
+      - name: Validate instance
+        run: |
+          INSTANCE="${{ inputs.instance }}"
+
+          if [ -z "$INSTANCE" ]; then
+            echo "Error: instance input is required"
+            exit 1
+          fi
+
+          if [ ! -d "instances/$INSTANCE" ]; then
+            echo "Error: instance '$INSTANCE' not found under instances/"
+            exit 1
+          fi
+
+          if [ ! -f "instances/$INSTANCE/instance.yml" ]; then
+            echo "Error: instances/$INSTANCE/instance.yml is missing"
+            exit 1
+          fi
+
+          if [ ! -f "instances/$INSTANCE/scripts/deploy.sh" ]; then
+            echo "Error: instances/$INSTANCE/scripts/deploy.sh is missing"
+            exit 1
+          fi
+
+          echo "Instance '$INSTANCE' validated successfully"
+
+      # -----------------------------------------------------------------------
+      # Read the schema version declared by the instance
+      # -----------------------------------------------------------------------
+      - name: Read schema version
+        id: schema
+        run: |
+          INSTANCE="${{ inputs.instance }}"
+          VERSION=$(grep 'schema_version:' "instances/$INSTANCE/instance.yml" \
+            | awk '{print $2}' | tr -d '"' | tr -d "'")
+          echo "Schema version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      # Execute the instance's deploy script.
+      # Secrets are injected as environment variables — never hard-coded.
+      # -----------------------------------------------------------------------
+      - name: Execute deploy script
+        run: |
+          INSTANCE="${{ inputs.instance }}"
+          chmod +x "instances/$INSTANCE/scripts/deploy.sh"
+          bash "instances/$INSTANCE/scripts/deploy.sh"
+        env:
+          INSTANCE: ${{ inputs.instance }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          APP_IMAGE: ${{ inputs.image }}
+          SCHEMA_VERSION: ${{ steps.schema.outputs.version }}
+          # --- Secrets (configured in GitHub repository / environment settings) ---
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          CLOUD_ACCESS_KEY: ${{ secrets.CLOUD_ACCESS_KEY }}
+          CLOUD_SECRET_KEY: ${{ secrets.CLOUD_SECRET_KEY }}
