@@ -16,12 +16,40 @@ log_error() {
 }
 
 # ---------------------------------------------------------------------------
-# validate_instance <instance-name>
-#   Checks that the instance directory and required files exist under instances/.
-#   Exits with status 1 on failure.
+# load_secrets <json-string>
+#   Parses a JSON object and exports every key/value pair as an environment
+#   variable. Requires jq (available on all GitHub-hosted runners).
+#
+#   Values may contain newlines (e.g. PEM-encoded SSH keys) — jq -r handles
+#   the JSON escape sequences and command substitution preserves them.
+# ---------------------------------------------------------------------------
+load_secrets() {
+  local json="${1:?JSON secrets string is required}"
+
+  if ! command -v jq &>/dev/null; then
+    log_error "jq is required to parse V1_SECRETS but was not found in PATH"
+    exit 1
+  fi
+
+  local key
+  while read -r key; do
+    # Read each value individually so newlines inside values are preserved.
+    local value
+    value=$(printf '%s' "$json" | jq -r --arg k "$key" '.[$k]')
+    export "$key=$value"
+  done < <(printf '%s' "$json" | jq -r 'keys[]')
+
+  log_info "Secrets loaded: $(printf '%s' "$json" | jq -r '[keys[]] | join(", ")')"
+}
+
+# ---------------------------------------------------------------------------
+# validate_instance <instance-name> <script-name>
+#   Checks that the instance directory, instance.yml, and the named script
+#   exist under instances/. Exits with status 1 on failure.
 # ---------------------------------------------------------------------------
 validate_instance() {
   local instance="${1:?Instance name is required}"
+  local script="${2:?Script name is required (e.g. deploy.sh)}"
   local repo_root
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -35,17 +63,12 @@ validate_instance() {
     exit 1
   fi
 
-  if [ ! -f "$repo_root/instances/$instance/scripts/deploy.sh" ]; then
-    log_error "scripts/deploy.sh not found for instance '$instance'"
+  if [ ! -f "$repo_root/instances/$instance/scripts/$script" ]; then
+    log_error "scripts/$script not found for instance '$instance'"
     exit 1
   fi
 
-  if [ ! -f "$repo_root/instances/$instance/scripts/undeploy.sh" ]; then
-    log_error "scripts/undeploy.sh not found for instance '$instance'"
-    exit 1
-  fi
-
-  log_info "Instance '$instance' validated successfully"
+  log_info "Instance '$instance' validated (script: $script)"
 }
 
 # ---------------------------------------------------------------------------

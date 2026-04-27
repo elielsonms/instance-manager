@@ -2,8 +2,13 @@ name: Release into Instance (v1)
 
 # Schema v1 release workflow.
 # Supports manual dispatch (workflow_dispatch) and API-driven dispatch
-# (repository_dispatch). Release is a v1-specific concept; other schema
-# versions may have different workflows (e.g. command-based dispatch).
+# (repository_dispatch).
+#
+# The workflow is intentionally thin: it receives inputs, checks out the repo,
+# and delegates all logic to schemas/v1/scripts/deploy.sh. That base script
+# parses V1_SECRETS, validates the instance, and calls the instance-specific
+# deploy script — so this file never needs to change when instances or secrets
+# are added or removed.
 #
 # repository_dispatch payload example:
 #   {
@@ -15,8 +20,17 @@ name: Release into Instance (v1)
 #     }
 #   }
 #
-# All sensitive values (kubeconfig, SSH keys, cloud credentials, etc.) MUST be
-# stored as GitHub Secrets and are never committed to the repository.
+# Required GitHub Secret:
+#   V1_SECRETS – JSON object containing all credential values needed by v1
+#                instance scripts. Example:
+#                {
+#                  "KUBECONFIG_DATA": "base64-encoded-kubeconfig",
+#                  "SERVER_HOST":     "hostname",
+#                  "SERVER_USER":     "user",
+#                  "SERVER_SSH_KEY":  "-----BEGIN RSA PRIVATE KEY-----\n...",
+#                  "CLOUD_ACCESS_KEY": "key",
+#                  "CLOUD_SECRET_KEY": "secret"
+#                }
 
 on:
   workflow_dispatch:
@@ -66,64 +80,14 @@ jobs:
         uses: actions/checkout@v4
 
       # -----------------------------------------------------------------------
-      # Validate that the instance folder and required files exist
+      # Delegate to the schema v1 base deploy dispatcher.
+      # The base script handles secret parsing, instance validation, and
+      # calling instances/<INSTANCE>/scripts/deploy.sh.
       # -----------------------------------------------------------------------
-      - name: Validate instance
-        run: |
-          INSTANCE="${{ steps.inputs.outputs.instance }}"
-
-          if [ -z "$INSTANCE" ]; then
-            echo "Error: instance input is required"
-            exit 1
-          fi
-
-          if [ ! -d "instances/$INSTANCE" ]; then
-            echo "Error: instance '$INSTANCE' not found under instances/"
-            exit 1
-          fi
-
-          if [ ! -f "instances/$INSTANCE/instance.yml" ]; then
-            echo "Error: instances/$INSTANCE/instance.yml is missing"
-            exit 1
-          fi
-
-          if [ ! -f "instances/$INSTANCE/scripts/deploy.sh" ]; then
-            echo "Error: instances/$INSTANCE/scripts/deploy.sh is missing"
-            exit 1
-          fi
-
-          echo "Instance '$INSTANCE' validated successfully"
-
-      # -----------------------------------------------------------------------
-      # Read the schema version declared by the instance
-      # -----------------------------------------------------------------------
-      - name: Read schema version
-        id: schema
-        run: |
-          INSTANCE="${{ steps.inputs.outputs.instance }}"
-          VERSION=$(grep 'schema_version:' "instances/$INSTANCE/instance.yml" \
-            | awk '{print $2}' | tr -d '"' | tr -d "'")
-          echo "Schema version: $VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      # -----------------------------------------------------------------------
-      # Execute the instance's deploy script.
-      # Secrets are injected as environment variables — never hard-coded.
-      # -----------------------------------------------------------------------
-      - name: Execute deploy script
-        run: |
-          INSTANCE="${{ steps.inputs.outputs.instance }}"
-          chmod +x "instances/$INSTANCE/scripts/deploy.sh"
-          bash "instances/$INSTANCE/scripts/deploy.sh"
+      - name: Execute v1 deploy dispatcher
+        run: bash schemas/v1/scripts/deploy.sh
         env:
           INSTANCE: ${{ steps.inputs.outputs.instance }}
           RELEASE_VERSION: ${{ steps.inputs.outputs.release_version }}
           APP_IMAGE: ${{ steps.inputs.outputs.image }}
-          SCHEMA_VERSION: ${{ steps.schema.outputs.version }}
-          # --- Secrets (configured in GitHub repository / environment settings) ---
-          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG_DATA }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          SERVER_USER: ${{ secrets.SERVER_USER }}
-          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          CLOUD_ACCESS_KEY: ${{ secrets.CLOUD_ACCESS_KEY }}
-          CLOUD_SECRET_KEY: ${{ secrets.CLOUD_SECRET_KEY }}
+          V1_SECRETS: ${{ secrets.V1_SECRETS }}

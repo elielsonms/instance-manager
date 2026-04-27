@@ -33,13 +33,17 @@ External Project
 │  .github/workflows/v1-release.yml   ← schema v1 trigger     │
 │  .github/workflows/v1-undeploy.yml  ← schema v1 trigger     │
 │           │                                                  │
-│           │  reads schema_version from                       │
-│           │  instances/<name>/instance.yml                   │
+│           │  calls base dispatcher                           │
+│           ▼                                                  │
+│  schemas/v1/scripts/deploy.sh  (or undeploy.sh)              │
+│    • parses V1_SECRETS JSON → exports env vars               │
+│    • validates instance folder                               │
+│    • delegates to instance script                            │
 │           │                                                  │
 │           ▼                                                  │
 │  instances/<name>/scripts/deploy.sh  (or undeploy)           │
 │           │                                                  │
-│           │  uses GitHub Secrets for credentials             │
+│           │  uses exported credentials                       │
 │           ▼                                                  │
 │       Remote Target (K8s cluster / server / cloud)           │
 └──────────────────────────────────────────────────────────────┘
@@ -71,8 +75,8 @@ instance-manager/
 │   └── v1/
 │       ├── schema.yml           # Schema v1 definition (contract)
 │       └── scripts/
-│           ├── deploy.sh        # Base deploy template for v1
-│           └── undeploy.sh      # Base undeploy template for v1
+│           ├── deploy.sh        # Base v1 deploy dispatcher (called by workflow)
+│           └── undeploy.sh      # Base v1 undeploy dispatcher (called by workflow)
 │
 ├── instances/
 │   └── my-k8s-instance/         # Example Kubernetes instance
@@ -100,7 +104,7 @@ the workflows and the instances.
 |---|---|
 | `required_scripts` | Scripts every instance must implement (`deploy.sh`, `undeploy.sh`) |
 | `required_env_vars` | Environment variables each script must expect |
-| `available_secrets` | Secrets the workflow injects (never committed to code) |
+| `available_secrets` | Secrets passed inside `V1_SECRETS` JSON (never committed to code) |
 
 ### Schema v1
 
@@ -111,8 +115,9 @@ Located at `schemas/v1/schema.yml`.  Requires two scripts per instance:
 | `scripts/deploy.sh` | Release into Instance workflow | `INSTANCE`, `RELEASE_VERSION`, `APP_IMAGE` |
 | `scripts/undeploy.sh` | Undeploy Release from Instance workflow | `INSTANCE`, `RELEASE_VERSION` |
 
-Copy `schemas/v1/scripts/deploy.sh` and `schemas/v1/scripts/undeploy.sh` into
-your new instance's `scripts/` folder as starting templates.
+Instance scripts receive any secret exported from `V1_SECRETS` as an
+environment variable. The base dispatcher scripts in `schemas/v1/scripts/`
+handle the JSON parsing — instance scripts just use the variables directly.
 
 ---
 
@@ -184,9 +189,11 @@ Deploys a versioned release to a target instance.
 
 **Execution path:**
 1. Resolve inputs from the event type
-2. Validate instance folder and `deploy.sh`
-3. Read `schema_version` from `instance.yml`
-4. Execute `instances/<name>/scripts/deploy.sh` with secrets injected as env vars
+2. Checkout repository
+3. Call `schemas/v1/scripts/deploy.sh` (base dispatcher)
+   - Parses `V1_SECRETS` JSON → exports all keys as env vars
+   - Validates instance folder and `deploy.sh`
+   - Delegates to `instances/<name>/scripts/deploy.sh`
 
 ---
 
@@ -207,31 +214,50 @@ Removes a versioned release from a target instance.
 
 **Execution path:**
 1. Resolve inputs from the event type
-2. Validate instance folder and `undeploy.sh`
-3. Read `schema_version` from `instance.yml`
-4. Execute `instances/<name>/scripts/undeploy.sh` with secrets injected as env vars
+2. Checkout repository
+3. Call `schemas/v1/scripts/undeploy.sh` (base dispatcher)
+   - Parses `V1_SECRETS` JSON → exports all keys as env vars
+   - Validates instance folder and `undeploy.sh`
+   - Delegates to `instances/<name>/scripts/undeploy.sh`
 
 ---
 
 ## Secrets Configuration
 
-All credentials are stored as **GitHub Secrets** (repository or environment
-level) and are **never** committed to the codebase.
+All credentials are stored as **GitHub Secrets** and are **never** committed
+to the codebase. Go to **Settings → Secrets and variables → Actions**.
 
-Go to **Settings → Secrets and variables → Actions** and add the secrets
-your instances need:
+### `V1_SECRETS` (required for all v1 workflows)
 
-| Secret name | Used by | Description |
-|---|---|---|
-| `KUBECONFIG_DATA` | Kubernetes instances | Base64-encoded kubeconfig (`cat ~/.kube/config | base64`) |
-| `SERVER_HOST` | Server instances | Remote server hostname or IP |
-| `SERVER_USER` | Server instances | SSH username |
-| `SERVER_SSH_KEY` | Server instances | SSH private key |
-| `CLOUD_ACCESS_KEY` | Cloud instances | Cloud provider access key |
-| `CLOUD_SECRET_KEY` | Cloud instances | Cloud provider secret key |
+Create **one** secret named `V1_SECRETS` whose value is a JSON object
+containing every credential key your v1 instance scripts need:
 
-The workflows pass **all** available secrets as environment variables to the
-instance scripts; each script uses only the ones it needs.
+```json
+{
+  "KUBECONFIG_DATA":  "base64-encoded-kubeconfig",
+  "SERVER_HOST":      "hostname-or-ip",
+  "SERVER_USER":      "ssh-username",
+  "SERVER_SSH_KEY":   "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----",
+  "CLOUD_ACCESS_KEY": "cloud-access-key",
+  "CLOUD_SECRET_KEY": "cloud-secret-key"
+}
+```
+
+You only need to include the keys your instance scripts actually use. The
+base dispatcher exports all keys as environment variables before calling the
+instance script, so scripts reference them by name in the usual way
+(`$KUBECONFIG_DATA`, `$SERVER_HOST`, etc.).
+
+**Common values and how to obtain them:**
+
+| Key | Description |
+|---|---|
+| `KUBECONFIG_DATA` | Base64-encoded kubeconfig: `cat ~/.kube/config \| base64` |
+| `SERVER_HOST` | Remote server hostname or IP |
+| `SERVER_USER` | SSH username |
+| `SERVER_SSH_KEY` | SSH private key (PEM format — newlines encoded as `\n` in JSON) |
+| `CLOUD_ACCESS_KEY` | Cloud provider access key |
+| `CLOUD_SECRET_KEY` | Cloud provider secret key |
 
 ---
 
@@ -295,20 +321,25 @@ curl -X POST \
    description: "My new instance"
    ```
 
-3. **Copy the schema templates and implement the scripts:**
+3. **Implement the instance scripts:**
 
-   ```bash
-   cp schemas/v1/scripts/deploy.sh   instances/my-new-instance/scripts/deploy.sh
-   cp schemas/v1/scripts/undeploy.sh instances/my-new-instance/scripts/undeploy.sh
-   ```
+   Create `instances/my-new-instance/scripts/deploy.sh` and `undeploy.sh`.
+   The scripts receive all secrets exported from `V1_SECRETS` as environment
+   variables. Use the existing `instances/my-k8s-instance/scripts/` as a
+   reference — or start from scratch for a different deployment type.
 
-   Edit both files to implement instance-specific logic (SSH to a server,
-   apply Kubernetes manifests, call a cloud API, etc.).
+   The minimum contract is:
+
+   `deploy.sh` — must handle env vars `INSTANCE`, `RELEASE_VERSION`, `APP_IMAGE`
+   plus any secrets it needs.
+
+   `undeploy.sh` — must handle `INSTANCE`, `RELEASE_VERSION` plus any secrets.
 
 4. **Add any instance-specific resources** (e.g. `manifests/` for Kubernetes)
    inside the instance folder.
 
-5. **Configure GitHub Secrets** for any credentials the scripts need.
+5. **Configure the `V1_SECRETS` GitHub Secret** with a JSON object containing
+   every credential key your scripts need (see [Secrets Configuration](#secrets-configuration)).
 
 6. **Test** by triggering the workflow manually from the Actions tab or via
    `workflow_dispatch`.

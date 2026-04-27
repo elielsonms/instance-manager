@@ -6,8 +6,9 @@ description: >
 required_scripts:
   - name: deploy.sh
     description: >
-      Deploy a release into the instance. Called by the "Release into Instance"
-      workflow.
+      Deploy a release into the instance. Called by the schema v1 base deploy
+      dispatcher (schemas/v1/scripts/deploy.sh), which is invoked by the
+      "Release into Instance" workflow.
     required_env_vars:
       - name: INSTANCE
         description: "Instance name (matches the folder under instances/)"
@@ -18,17 +19,29 @@ required_scripts:
 
   - name: undeploy.sh
     description: >
-      Undeploy a release from the instance. Called by the "Undeploy Release
-      from Instance" workflow.
+      Undeploy a release from the instance. Called by the schema v1 base
+      undeploy dispatcher (schemas/v1/scripts/undeploy.sh), which is invoked
+      by the "Undeploy Release from Instance" workflow.
     required_env_vars:
       - name: INSTANCE
         description: "Instance name"
       - name: RELEASE_VERSION
         description: "Semantic version of the release being undeployed"
 
-# Environment variables injected from GitHub Secrets by the workflows.
-# Instance scripts must only reference variables listed here; no secrets
-# should ever be hard-coded in the codebase.
+# Secrets are passed to the workflow as a single JSON GitHub Secret named
+# V1_SECRETS. The base dispatcher scripts parse this blob and export each
+# key as an environment variable before calling the instance script.
+# Instance scripts may reference any of the keys below by name.
+#
+# Example V1_SECRETS value (store as a GitHub Secret):
+#   {
+#     "KUBECONFIG_DATA":  "base64-encoded-kubeconfig",
+#     "SERVER_HOST":      "hostname-or-ip",
+#     "SERVER_USER":      "ssh-username",
+#     "SERVER_SSH_KEY":   "-----BEGIN RSA PRIVATE KEY-----\n...",
+#     "CLOUD_ACCESS_KEY": "cloud-access-key",
+#     "CLOUD_SECRET_KEY": "cloud-secret-key"
+#   }
 available_secrets:
   - name: KUBECONFIG_DATA
     description: "Base64-encoded kubeconfig for Kubernetes clusters"
