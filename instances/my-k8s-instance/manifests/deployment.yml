@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${INSTANCE}
+  namespace: ${INSTANCE}
+  labels:
+    app: ${INSTANCE}
+    version: ${RELEASE_VERSION}
+    managed-by: instance-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ${INSTANCE}
+  template:
+    metadata:
+      labels:
+        app: ${INSTANCE}
+        version: ${RELEASE_VERSION}
+    spec:
+      containers:
+        - name: app
+          image: ${APP_IMAGE}
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

@@ -1,0 +1,48 @@
+version: v1
+description: >
+  Base instance schema version 1.
+  Defines the deploy/undeploy contract that every v1 instance must implement.
+
+required_scripts:
+  - name: deploy.sh
+    description: >
+      Deploy a release into the instance. Called by the "Release into Instance"
+      workflow.
+    required_env_vars:
+      - name: INSTANCE
+        description: "Instance name (matches the folder under instances/)"
+      - name: RELEASE_VERSION
+        description: "Semantic version of the release being deployed"
+      - name: APP_IMAGE
+        description: "Full container image reference, e.g. myapp:1.0.0"
+
+  - name: undeploy.sh
+    description: >
+      Undeploy a release from the instance. Called by the "Undeploy Release
+      from Instance" workflow.
+    required_env_vars:
+      - name: INSTANCE
+        description: "Instance name"
+      - name: RELEASE_VERSION
+        description: "Semantic version of the release being undeployed"
+
+# Environment variables injected from GitHub Secrets by the workflows.
+# Instance scripts must only reference variables listed here; no secrets
+# should ever be hard-coded in the codebase.
+available_secrets:
+  - name: KUBECONFIG_DATA
+    description: "Base64-encoded kubeconfig for Kubernetes clusters"
+  - name: SERVER_HOST
+    description: "External server hostname or IP address"
+  - name: SERVER_USER
+    description: "SSH username for the external server"
+  - name: SERVER_SSH_KEY
+    description: "SSH private key for the external server"
+  - name: CLOUD_ACCESS_KEY
+    description: "Cloud provider access key (AWS, GCP, Azure, etc.)"
+  - name: CLOUD_SECRET_KEY
+    description: "Cloud provider secret/credential key"
+
+changelog:
+  - version: v1
+    description: "Initial schema version with deploy and undeploy contracts"
