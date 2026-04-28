@@ -11,15 +11,15 @@
 # Required environment variables (injected by the workflow):
 #   INSTANCE        – Target instance name (matches folder under instances/)
 #   RELEASE_VERSION – Semantic version to deploy (e.g. 1.2.3)
-#   APP_IMAGE       – Container image with tag (e.g. myapp:1.2.3)
+#   APP_IMAGE       – Container image with tag (e.g. ghcr.io/org/svc:1.2.3)
 #   V1_SECRETS      – JSON object with all secret values, e.g.:
 #                     {
-#                       "KUBECONFIG_DATA": "base64...",
-#                       "SERVER_HOST":     "hostname",
-#                       "SERVER_USER":     "user",
-#                       "SERVER_SSH_KEY":  "-----BEGIN...",
-#                       "CLOUD_ACCESS_KEY": "key",
-#                       "CLOUD_SECRET_KEY": "secret"
+#                       "SERVER_HOST":    "hostname",
+#                       "SERVER_USER":    "user",
+#                       "SERVER_SSH_KEY": "-----BEGIN...",
+#                       "DO_TOKEN":       "dop_v1_...",
+#                       "DO_DOMAIN":      "elielsonms.com",
+#                       "DO_RECORD_NAME": "local.instance"
 #                     }
 #
 # Instance scripts may reference any key exported from V1_SECRETS.

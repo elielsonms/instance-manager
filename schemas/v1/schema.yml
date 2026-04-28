@@ -43,18 +43,18 @@ required_scripts:
 #     "CLOUD_SECRET_KEY": "cloud-secret-key"
 #   }
 available_secrets:
-  - name: KUBECONFIG_DATA
-    description: "Base64-encoded kubeconfig for Kubernetes clusters"
   - name: SERVER_HOST
-    description: "External server hostname or IP address"
+    description: "Home server hostname or IP address (for SSH from the runner)"
   - name: SERVER_USER
-    description: "SSH username for the external server"
+    description: "SSH username on the home server"
   - name: SERVER_SSH_KEY
-    description: "SSH private key for the external server"
-  - name: CLOUD_ACCESS_KEY
-    description: "Cloud provider access key (AWS, GCP, Azure, etc.)"
-  - name: CLOUD_SECRET_KEY
-    description: "Cloud provider secret/credential key"
+    description: "SSH private key (PEM format) for the home server"
+  - name: DO_TOKEN
+    description: "DigitalOcean personal access token (Domain read+write scope)"
+  - name: DO_DOMAIN
+    description: "Root domain managed in DigitalOcean, e.g. elielsonms.com"
+  - name: DO_RECORD_NAME
+    description: "Subdomain part of the DNS record to keep updated, e.g. local.instance"
 
 changelog:
   - version: v1

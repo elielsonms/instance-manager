@@ -13,12 +13,9 @@
 #   RELEASE_VERSION – Semantic version to undeploy (e.g. 1.2.3)
 #   V1_SECRETS      – JSON object with all secret values, e.g.:
 #                     {
-#                       "KUBECONFIG_DATA": "base64...",
-#                       "SERVER_HOST":     "hostname",
-#                       "SERVER_USER":     "user",
-#                       "SERVER_SSH_KEY":  "-----BEGIN...",
-#                       "CLOUD_ACCESS_KEY": "key",
-#                       "CLOUD_SECRET_KEY": "secret"
+#                       "SERVER_HOST":    "hostname",
+#                       "SERVER_USER":    "user",
+#                       "SERVER_SSH_KEY": "-----BEGIN..."
 #                     }
 #
 # Instance scripts may reference any key exported from V1_SECRETS.

@@ -1,0 +1,13 @@
+name: local
+schema_version: v1
+type: server
+description: >
+  Home server instance. Deploys Docker-based services to a self-hosted server
+  via SSH. The server sits behind a dynamic residential IP address; the
+  dns-updater service keeps local.instance.elielsonms.com pointed at the
+  current public IP.
+
+# Instance-level configuration (non-sensitive).
+# Sensitive values (SSH key, API tokens, etc.) must be stored in V1_SECRETS.
+config:
+  host_domain: local.instance.elielsonms.com

@@ -79,15 +79,14 @@ instance-manager/
 │           └── undeploy.sh      # Base v1 undeploy dispatcher (called by workflow)
 │
 ├── instances/
-│   └── my-k8s-instance/         # Example Kubernetes instance
+│   └── local/                   # Home server instance
 │       ├── instance.yml         # Instance config (schema_version, type, …)
 │       ├── scripts/
-│       │   ├── deploy.sh        # v1 deploy implementation for this instance
-│       │   └── undeploy.sh      # v1 undeploy implementation for this instance
-│       └── manifests/           # Kubernetes-specific manifests (envsubst templates)
-│           ├── namespace.yml
-│           ├── deployment.yml
-│           └── service.yml
+│       │   ├── deploy.sh        # SSH-based Docker deploy for this instance
+│       │   └── undeploy.sh      # SSH-based Docker undeploy for this instance
+│       └── services/            # Per-service documentation and config
+│           └── dns-updater/     # Keeps local.instance.elielsonms.com up to date
+│               └── README.md
 │
 └── scripts/
     └── utils.sh                 # Shared utility functions (logging, validation)
@@ -234,30 +233,30 @@ containing every credential key your v1 instance scripts need:
 
 ```json
 {
-  "KUBECONFIG_DATA":  "base64-encoded-kubeconfig",
   "SERVER_HOST":      "hostname-or-ip",
   "SERVER_USER":      "ssh-username",
-  "SERVER_SSH_KEY":   "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----",
-  "CLOUD_ACCESS_KEY": "cloud-access-key",
-  "CLOUD_SECRET_KEY": "cloud-secret-key"
+  "SERVER_SSH_KEY":   "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
+  "DO_TOKEN":         "dop_v1_xxxxxxxxxxxxxxxxxxxx",
+  "DO_DOMAIN":        "elielsonms.com",
+  "DO_RECORD_NAME":   "local.instance"
 }
 ```
 
 You only need to include the keys your instance scripts actually use. The
 base dispatcher exports all keys as environment variables before calling the
 instance script, so scripts reference them by name in the usual way
-(`$KUBECONFIG_DATA`, `$SERVER_HOST`, etc.).
+(`$SERVER_HOST`, `$DO_TOKEN`, etc.).
 
 **Common values and how to obtain them:**
 
 | Key | Description |
 |---|---|
-| `KUBECONFIG_DATA` | Base64-encoded kubeconfig: `cat ~/.kube/config \| base64` |
-| `SERVER_HOST` | Remote server hostname or IP |
-| `SERVER_USER` | SSH username |
-| `SERVER_SSH_KEY` | SSH private key (PEM format — newlines encoded as `\n` in JSON) |
-| `CLOUD_ACCESS_KEY` | Cloud provider access key |
-| `CLOUD_SECRET_KEY` | Cloud provider secret key |
+| `SERVER_HOST` | Home server hostname or IP address (for SSH from the runner) |
+| `SERVER_USER` | SSH username on the home server |
+| `SERVER_SSH_KEY` | SSH private key (PEM format — newlines as `\n` in JSON) |
+| `DO_TOKEN` | DigitalOcean personal access token (Domain read+write scope) |
+| `DO_DOMAIN` | Root domain managed in DigitalOcean, e.g. `elielsonms.com` |
+| `DO_RECORD_NAME` | Subdomain to update, e.g. `local.instance` |
 
 ---
 
@@ -276,9 +275,9 @@ curl -X POST \
   -d '{
     "event_type": "release-into-instance",
     "client_payload": {
-      "instance":        "my-k8s-instance",
+      "instance":        "local",
       "release_version": "1.2.3",
-      "image":           "myapp:1.2.3"
+      "image":           "ghcr.io/elielsonms/dns-updater:1.2.3"
     }
   }'
 ```
@@ -293,8 +292,9 @@ curl -X POST \
   -d '{
     "event_type": "undeploy-from-instance",
     "client_payload": {
-      "instance":        "my-k8s-instance",
-      "release_version": "1.2.3"
+      "instance":        "local",
+      "release_version": "1.2.3",
+      "image":           "ghcr.io/elielsonms/dns-updater:1.2.3"
     }
   }'
 ```
@@ -325,15 +325,16 @@ curl -X POST \
 
    Create `instances/my-new-instance/scripts/deploy.sh` and `undeploy.sh`.
    The scripts receive all secrets exported from `V1_SECRETS` as environment
-   variables. Use the existing `instances/my-k8s-instance/scripts/` as a
-   reference — or start from scratch for a different deployment type.
+   variables. Use `instances/local/scripts/` as a reference for a server-based
+   instance that deploys Docker containers over SSH.
 
    The minimum contract is:
 
    `deploy.sh` — must handle env vars `INSTANCE`, `RELEASE_VERSION`, `APP_IMAGE`
    plus any secrets it needs.
 
-   `undeploy.sh` — must handle `INSTANCE`, `RELEASE_VERSION` plus any secrets.
+   `undeploy.sh` — must handle `INSTANCE`, `RELEASE_VERSION`, `APP_IMAGE`
+   plus any secrets it needs.
 
 4. **Add any instance-specific resources** (e.g. `manifests/` for Kubernetes)
    inside the instance folder.
