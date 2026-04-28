@@ -1,0 +1,61 @@
+version: v1
+description: >
+  Base instance schema version 1.
+  Defines the deploy/undeploy contract that every v1 instance must implement.
+
+required_scripts:
+  - name: deploy.sh
+    description: >
+      Deploy a release into the instance. Called by the schema v1 base deploy
+      dispatcher (schemas/v1/scripts/deploy.sh), which is invoked by the
+      "Release into Instance" workflow.
+    required_env_vars:
+      - name: INSTANCE
+        description: "Instance name (matches the folder under instances/)"
+      - name: RELEASE_VERSION
+        description: "Semantic version of the release being deployed"
+      - name: APP_IMAGE
+        description: "Full container image reference, e.g. myapp:1.0.0"
+
+  - name: undeploy.sh
+    description: >
+      Undeploy a release from the instance. Called by the schema v1 base
+      undeploy dispatcher (schemas/v1/scripts/undeploy.sh), which is invoked
+      by the "Undeploy Release from Instance" workflow.
+    required_env_vars:
+      - name: INSTANCE
+        description: "Instance name"
+      - name: RELEASE_VERSION
+        description: "Semantic version of the release being undeployed"
+
+# Secrets are passed to the workflow as a single JSON GitHub Secret named
+# V1_SECRETS. The base dispatcher scripts parse this blob and export each
+# key as an environment variable before calling the instance script.
+# Instance scripts may reference any of the keys below by name.
+#
+# Example V1_SECRETS value (store as a GitHub Secret):
+#   {
+#     "KUBECONFIG_DATA":  "base64-encoded-kubeconfig",
+#     "SERVER_HOST":      "hostname-or-ip",
+#     "SERVER_USER":      "ssh-username",
+#     "SERVER_SSH_KEY":   "-----BEGIN RSA PRIVATE KEY-----\n...",
+#     "CLOUD_ACCESS_KEY": "cloud-access-key",
+#     "CLOUD_SECRET_KEY": "cloud-secret-key"
+#   }
+available_secrets:
+  - name: SERVER_HOST
+    description: "Home server hostname or IP address (for SSH from the runner)"
+  - name: SERVER_USER
+    description: "SSH username on the home server"
+  - name: SERVER_SSH_KEY
+    description: "SSH private key (PEM format) for the home server"
+  - name: DO_TOKEN
+    description: "DigitalOcean personal access token (Domain read+write scope)"
+  - name: DO_DOMAIN
+    description: "Root domain managed in DigitalOcean, e.g. elielsonms.com"
+  - name: DO_RECORD_NAME
+    description: "Subdomain part of the DNS record to keep updated, e.g. local.instance"
+
+changelog:
+  - version: v1
+    description: "Initial schema version with deploy and undeploy contracts"

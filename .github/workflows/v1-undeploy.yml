@@ -1,0 +1,85 @@
+name: Undeploy Release from Instance (v1)
+
+# Schema v1 undeploy workflow.
+# Supports manual dispatch (workflow_dispatch) and API-driven dispatch
+# (repository_dispatch).
+#
+# The workflow is intentionally thin: it receives inputs, checks out the repo,
+# and delegates all logic to schemas/v1/scripts/undeploy.sh. That base script
+# parses V1_SECRETS, validates the instance, and calls the instance-specific
+# undeploy script — so this file never needs to change when instances or
+# secrets are added or removed.
+#
+# repository_dispatch payload example:
+#   {
+#     "event_type": "undeploy-from-instance",
+#     "client_payload": {
+#       "instance":        "my-k8s-instance",
+#       "release_version": "1.2.3"
+#     }
+#   }
+#
+# Required GitHub Secret:
+#   V1_SECRETS – JSON object containing all credential values needed by v1
+#                instance scripts. Example:
+#                {
+#                  "KUBECONFIG_DATA": "base64-encoded-kubeconfig",
+#                  "SERVER_HOST":     "hostname",
+#                  "SERVER_USER":     "user",
+#                  "SERVER_SSH_KEY":  "-----BEGIN RSA PRIVATE KEY-----\n...",
+#                  "CLOUD_ACCESS_KEY": "key",
+#                  "CLOUD_SECRET_KEY": "secret"
+#                }
+
+on:
+  workflow_dispatch:
+    inputs:
+      instance:
+        description: "Target instance name (must match a folder under instances/)"
+        required: true
+        type: string
+      release_version:
+        description: "Release version to undeploy (e.g. 1.2.3)"
+        required: true
+        type: string
+
+  repository_dispatch:
+    types: [undeploy-from-instance]
+
+# Restrict the GITHUB_TOKEN to the minimum required permissions.
+permissions:
+  contents: read
+
+jobs:
+  undeploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Normalise inputs — works for both trigger types
+      # -----------------------------------------------------------------------
+      - name: Resolve event inputs
+        id: inputs
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "instance=${{ github.event.client_payload.instance }}"               >> "$GITHUB_OUTPUT"
+            echo "release_version=${{ github.event.client_payload.release_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "instance=${{ inputs.instance }}"               >> "$GITHUB_OUTPUT"
+            echo "release_version=${{ inputs.release_version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Delegate to the schema v1 base undeploy dispatcher.
+      # The base script handles secret parsing, instance validation, and
+      # calling instances/<INSTANCE>/scripts/undeploy.sh.
+      # -----------------------------------------------------------------------
+      - name: Execute v1 undeploy dispatcher
+        run: bash schemas/v1/scripts/undeploy.sh
+        env:
+          INSTANCE: ${{ steps.inputs.outputs.instance }}
+          RELEASE_VERSION: ${{ steps.inputs.outputs.release_version }}
+          V1_SECRETS: ${{ secrets.V1_SECRETS }}
